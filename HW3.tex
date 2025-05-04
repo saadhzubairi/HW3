@@ -7,6 +7,27 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{float}
+\usepackage{xcolor}
+\definecolor{bg}{rgb}{0.95,0.95,0.95}
+\usepackage{tcolorbox}
+\tcbuselibrary{listings,skins}
+\newtcblisting{pythoncode}{
+  listing engine=minted,
+  colback=bg,
+  colframe=black!50,
+  listing only,
+  minted language=python,
+  minted options={
+    linenos,
+    breaklines,
+    fontsize=\small,
+    gobble=2
+  },
+  left=1mm, right=1mm, top=1mm, bottom=1mm,
+  enhanced,
+  boxrule=0.4pt,
+  arc=3pt,
+}
 
 \topmargin=-0.45in
 \evensidemargin=0in
@@ -216,6 +237,8 @@ Dynamics of the updates
 % \subsubsection{Conclusion}
 
 % Regular gradient descent on both variables does not converge to the saddle point unless \(y_0 = 0\) exactly and remains unperturbed. This is because \(y_t\) diverges due to the exponential growth caused by \((1 + 8\eta) > 1\).
+
+\pagebreak
 
 \section{Vision-Language models}
 
@@ -453,5 +476,12 @@ Scaling plays a critical role in the performance of vision-language models. Larg
 
 In general, scaling both the image and text encoders proportionally tends to yield the best results, as seen with Model A. However, this comes at the cost of increased computational requirements, which must be balanced against the desired performance and available resources.
 
+\pagebreak
+
+\begin{pythoncode}
+    def sexy_func(x):
+        """Return squares of x."""
+        return [i**2 for i in x]
+\end{pythoncode}
 
 \end{document}
