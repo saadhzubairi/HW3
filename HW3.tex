@@ -7,27 +7,21 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{float}
-\usepackage{xcolor}
-\definecolor{bg}{rgb}{0.95,0.95,0.95}
-\usepackage{tcolorbox}
-\tcbuselibrary{listings,skins}
-\newtcblisting{pythoncode}{
-  listing engine=minted,
-  colback=bg,
-  colframe=black!50,
-  listing only,
-  minted language=python,
-  minted options={
-    linenos,
-    breaklines,
-    fontsize=\small,
-    gobble=2
-  },
-  left=1mm, right=1mm, top=1mm, bottom=1mm,
-  enhanced,
-  boxrule=0.4pt,
-  arc=3pt,
-}
+% \usepackage{xcolor}
+% \usepackage{minted}
+% \usepackage{tcolorbox}
+% \tcbuselibrary{minted,skins}
+% \definecolor{bg}{rgb}{0.95,0.95,0.95}
+% \usepackage{tcolorbox}
+% \tcbuselibrary{listings,skins}
+% \newtcblisting{pythoncode}{
+%   listing engine=minted,
+%   colback=white!95!gray,
+%   colframe=black!50,
+%   minted language=python,
+%   minted options={linenos, breaklines, fontsize=\small},
+%   boxrule=0.4pt, arc=3pt, left=1mm, right=1mm
+% }
 
 \topmargin=-0.45in
 \evensidemargin=0in
@@ -478,10 +472,273 @@ In general, scaling both the image and text encoders proportionally tends to yie
 
 \pagebreak
 
-\begin{pythoncode}
-    def sexy_func(x):
-        """Return squares of x."""
-        return [i**2 for i in x]
-\end{pythoncode}
+\section{Generative Adversarial Networks (GANs)}
+
+Following is the implementation of a simple GAN using PyTorch. The code is structured to include the generator and discriminator networks, the training loop, and the evaluation of generated images.
+
+\subsection{Code Implementation}
+\href{https://github.com/your-repo-link}{All code files can be found here.}
+
+\subsubsection{\texttt{config.py}}
+
+This file contains the configuration settings for the GAN, including hyperparameters and model architecture details.
+
+\begin{lstlisting}[language=Python, caption={Hyperparameters and Paths}, label={lst:config}, frame=single, basicstyle=\ttfamily\small, keywordstyle=\color{blue}\bfseries, commentstyle=\color{green!50!black}, stringstyle=\color{red!70!black}]
+DATA_DIR    = "data"
+OUTPUT_DIR  = "outputs"
+LOG_DIR     = "logs"
+
+IMG_SIZE    = 28
+CHANNELS    = 1
+LATENT_DIM  = 100
+
+BATCH_SIZE  = 64
+LR          = 1e-4
+BETAS       = (0.5, 0.999)
+
+EPOCHS      = 50
+SAVE_EPOCHS = {10, 30, 50}
+
+SEED        = 42
+\end{lstlisting}
+
+\subsubsection{\texttt{dataset.py}}
+
+\begin{lstlisting}[language=Python, caption={DataLoader Class}, label={lst:config}, frame=single, basicstyle=\ttfamily\small, keywordstyle=\color{blue}\bfseries, commentstyle=\color{green!50!black}, stringstyle=\color{red!70!black}]
+    import torch
+    from torchvision import datasets, transforms
+    from torch.utils.data import DataLoader
+    import config
+    
+    # Function to create and return a DataLoader for the FashionMNIST dataset
+    def get_dataloader():
+    # Define a series of transformations to preprocess the images
+    tf = transforms.Compose([
+        transforms.Resize(config.IMG_SIZE),  
+        transforms.ToTensor(),              
+        transforms.Normalize((0.5,), (0.5,)),  
+        ])
+        
+        # Load the FashionMNIST dataset with the specified transformations
+        ds = datasets.FashionMNIST(
+            root=config.DATA_DIR,  
+            train=True,           
+            download=True,        
+            transform=tf          
+            )
+            
+            # Create and return a DataLoader for the dataset
+            return DataLoader(
+        ds,
+        batch_size=config.BATCH_SIZE,  
+        shuffle=True,                  
+        num_workers=4,                 
+        pin_memory=True,               
+    )
+\end{lstlisting}
+
+\subsection{\texttt{models.py}}
+\begin{lstlisting}[language=Python, caption={Discriminator and Generator Models}, label={lst:models}, frame=single, basicstyle=\ttfamily\scriptsize, keywordstyle=\color{blue}\bfseries, commentstyle=\color{green!50!black}, stringstyle=\color{red!70!black}]
+import torch.nn as nn
+import config
+
+# Discriminator: A CNN-based model to classify real vs. fake images
+class Discriminator(nn.Module):
+    def __init__(self, channels=config.CHANNELS, feat=64, slope=0.3, drop=0.3):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(channels, feat, 5, 2, 2, bias=False),  # 1x28x28 -> 64x14x14
+            nn.LeakyReLU(slope, inplace=True),
+            nn.Dropout(drop),
+            nn.Conv2d(feat, feat*2, 5, 2, 2, bias=False),    # 64x14x14 -> 128x7x7
+            nn.LeakyReLU(slope, inplace=True),
+            nn.Dropout(drop),
+        )
+        ds = config.IMG_SIZE // 4
+        self.fc = nn.Linear(feat*2*ds*ds, 1, bias=False)    # 128x7x7 -> scalar
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = x.view(x.size(0), -1)
+        return self.fc(x).view(-1)
+
+# Generator: A CNN-based model to generate images from random noise
+class Generator(nn.Module):
+    def __init__(self, latent_dim=config.LATENT_DIM, channels=config.CHANNELS, feat=64, slope=0.3):
+        super().__init__()
+        ds = config.IMG_SIZE // 4
+        self.fc = nn.Sequential(
+            nn.Linear(latent_dim, feat*4*ds*ds, bias=False),  # 100 -> 256x7x7
+            nn.BatchNorm1d(feat*4*ds*ds),
+            nn.LeakyReLU(slope, inplace=True),
+        )
+        self.deconv = nn.Sequential(
+            nn.Unflatten(1, (feat*4, ds, ds)),               # Reshape to 256x7x7
+            nn.ConvTranspose2d(feat*4, feat*2, 5, 2, 2, output_padding=1, bias=False),
+            nn.BatchNorm2d(feat*2),
+            nn.LeakyReLU(slope, inplace=True),
+            nn.ConvTranspose2d(feat*2, feat, 5, 2, 2, output_padding=1, bias=False),
+            nn.BatchNorm2d(feat),
+            nn.LeakyReLU(slope, inplace=True),
+            nn.ConvTranspose2d(feat, channels, 5, 1, 2, bias=False),
+            nn.Tanh(),
+        )
+
+    def forward(self, z):
+        x = self.fc(z)
+        return self.deconv(x)
+\end{lstlisting}
+
+\subsection{\texttt{utils.py}}
+\begin{lstlisting}[language=Python, caption={Utilities}, label={lst:config}, frame=single, basicstyle=\ttfamily\small, keywordstyle=\color{blue}\bfseries, commentstyle=\color{green!50!black}, stringstyle=\color{red!70!black}]
+import os
+import torch
+import torch.nn as nn
+from torchvision.utils import save_image, make_grid
+import config
+
+# Initialize weights for Conv2d, ConvTranspose2d, and Linear layers
+def weights_init(m):
+    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
+        nn.init.normal_(m.weight, 0.0, 0.02)
+
+# Save generated samples as a grid image
+def save_samples(gen, epoch, fixed_noise):
+    gen.eval()  # Set generator to evaluation mode
+    # Disable gradient computation
+    with torch.no_grad():  
+        # Normalize to [0,1]
+        imgs = gen(fixed_noise).add(1).div(2)  
+        # Create grid of images
+        grid = make_grid(imgs, nrow=8)  
+        # Ensure output directory exists
+        os.makedirs(config.OUTPUT_DIR, exist_ok=True)  
+        # Save grid image
+        save_image(grid, f"{config.OUTPUT_DIR}/epoch_{epoch}.png")  
+    # Restore generator to training mode
+    gen.train()  
+
+\end{lstlisting}
+
+\subsection{\texttt{train.py}}
+\begin{lstlisting}[language=Python, caption={Training Loop}, label={lst:config}, frame=single, basicstyle=\ttfamily\small, keywordstyle=\color{blue}\bfseries, commentstyle=\color{green!50!black}, stringstyle=\color{red!70!black}]
+    import os
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.tensorboard import SummaryWriter
+    from tqdm import tqdm
+    
+    import config
+    from dataset import get_dataloader
+    from models import Generator, Discriminator
+    from utils import weights_init, save_samples
+    
+    def train():
+        # Set random seed for reproducibility
+        torch.manual_seed(config.SEED)  
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+    
+        # Load dataset
+        dl = get_dataloader()  
+        # Initialize generator
+        gen  = Generator().to(device)  
+        # Initialize discriminator
+        disc = Discriminator().to(device)  
+        # Apply weight initialization to generator
+        gen.apply(weights_init)  
+        # Apply weight initialization to discriminator
+        disc.apply(weights_init)  
+    
+        # Optimizer for generator
+        opt_g = optim.Adam(gen.parameters(), lr=config.LR, betas=config.BETAS)  
+        # Optimizer for discriminator
+        opt_d = optim.Adam(disc.parameters(), lr=config.LR, betas=config.BETAS)  
+        # Loss function
+        criterion = nn.BCEWithLogitsLoss()  
+    
+        # Fixed noise for generating samples
+        fixed_noise = torch.randn(64, config.LATENT_DIM, device=device)  
+        # TensorBoard writer for logging
+        writer = SummaryWriter(config.LOG_DIR)  
+    
+        step = 0
+        for ep in range(1, config.EPOCHS+1):
+            # Progress bar for each epoch
+            loop = tqdm(dl, desc=f"Epoch {ep}/{config.EPOCHS}")  
+            for real, _ in loop:
+                real = real.to(device)
+                bs = real.size(0)
+                noise = torch.randn(bs, config.LATENT_DIM, device=device)
+                fake  = gen(noise)
+    
+                # Discriminator step
+                
+                opt_d.zero_grad()
+                d_real = disc(real)
+                d_fake = disc(fake.detach())
+                loss_d = criterion(d_real, torch.ones_like(d_real)) + criterion(d_fake, torch.zeros_like(d_fake))
+                loss_d.backward()
+                opt_d.step()
+    
+                # Generator step
+                
+                opt_g.zero_grad()
+                d_fake2 = disc(fake)
+                loss_g = criterion(d_fake2, torch.ones_like(d_fake2))
+                loss_g.backward()
+                opt_g.step()
+    
+                # Log discriminator loss
+                writer.add_scalar("Loss/Discriminator", loss_d.item(), step)  
+                # Log generator loss
+                writer.add_scalar("Loss/Generator",     loss_g.item(), step)  
+                step += 1
+                # Update progress bar with losses
+                loop.set_postfix(d_loss=loss_d.item(), g_loss=loss_g.item())  
+    
+            if ep in config.SAVE_EPOCHS:
+                # Save generated samples at specific epochs
+                save_samples(gen, ep, fixed_noise)  
+    
+        # Ensure output directory exists
+        os.makedirs(config.OUTPUT_DIR, exist_ok=True)  
+        # Save generator model
+        torch.save(gen.state_dict(), os.path.join(config.OUTPUT_DIR, "generator.pth"))  
+        # Save discriminator model
+        torch.save(disc.state_dict(), os.path.join(config.OUTPUT_DIR, "discriminator.pth"))  
+        # Close TensorBoard writer
+        writer.close()  
+    
+    if __name__ == "__main__":
+        # Run training
+        train()  
+    
+    \end{lstlisting}
+    
+\subsection{\texttt{generate.py}}
+
+\begin{lstlisting}[language=Python, caption={Generation}, label={lst:config}, frame=single, basicstyle=\ttfamily\small, keywordstyle=\color{blue}\bfseries, commentstyle=\color{green!50!black}, stringstyle=\color{red!70!black}]
+import torch
+from models import Generator  
+from utils import save_samples
+import config 
+
+def generate(model_path=None, n=64):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+    G = Generator().to(device)  
+    mp = model_path or f"{config.OUTPUT_DIR}/generator.pth"  
+    G.load_state_dict(torch.load(mp, map_location=device))  
+    # Generate random noise
+    noise = torch.randn(n, config.LATENT_DIM, device=device)  
+    # Generate and save samples
+    save_samples(G, "final", noise)  
+
+if __name__ == "__main__":
+    # Run the generate function if script is executed
+    generate()  
+
+\end{lstlisting}
+
 
 \end{document}
